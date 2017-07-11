@@ -24,7 +24,7 @@ type Atlas struct {
 	Format string
 	Filter string
 	Repeat string
-	Images []Image
+	Images []*Image
 }
 
 type Image struct {
@@ -42,11 +42,11 @@ func (i *Image) Rect() image.Rectangle {
 	  xy: 1116, 1688
 	  size: 846, 358
 	*/
-	return image.Rect(1116, 1688, 846, 358)
+	// return image.Rect(500, 600, 100, 200) // 100, 200, 400, 400
 	if i.rotate {
-		return image.Rect(i.xy.X, i.xy.Y, i.size.Y, i.size.X)
+		return image.Rect(i.xy.X, i.xy.Y, i.xy.X+i.size.Y, i.xy.Y+i.size.X)
 	}
-	return image.Rect(i.xy.X, i.xy.Y, i.size.X, i.size.Y)
+	return image.Rect(i.xy.X, i.xy.Y, i.xy.X+i.size.X, i.xy.Y+i.size.Y)
 }
 
 func (i *Image) parse(s string, err error, ch string) (string, error) {
@@ -72,7 +72,9 @@ func (i *Image) parseRotate(s string, err error) error {
 		return e
 	}
 	i.rotate = false
-	if ss == "true" {
+	fmt.Printf("rotate->%s", ss)
+	if strings.Index(ss, "true") != -1 {
+		fmt.Println("rotate true!!")
 		i.rotate = true
 	}
 	return nil
@@ -91,7 +93,7 @@ func (i *Image) parsePoint(s string, err error, ch string) (*image.Point, error)
 	if e != nil {
 		return nil, e
 	}
-	y, e := strconv.Atoi(strings.TrimSpace(point[0]))
+	y, e := strconv.Atoi(strings.TrimSpace(point[1]))
 	if e != nil {
 		return nil, e
 	}
@@ -156,8 +158,9 @@ func (a *Atlas) Unpack() error {
 	}
 
 	createImage := make(chan error, len(a.Images))
-	for _, img := range a.Images {
-		go func() {
+	for i := 0; i < len(a.Images); i++ {
+		go func(img *Image) {
+			fmt.Printf("debug rect:%v\n", img.Rect())
 			newImg := atlasImage.(interface {
 				SubImage(r image.Rectangle) image.Image
 			}).SubImage(img.Rect())
@@ -173,49 +176,44 @@ func (a *Atlas) Unpack() error {
 				return
 			}
 			createImage <- nil
-		}()
+		}(a.Images[i])
 	}
 
-	for _ = range a.Images {
-		res, ok := <-createImage
-
-		fmt.Printf("end:%v:%v\n", res, ok)
+	for i := 0; i < len(a.Images); i++ {
+		<-createImage
 	}
 
 	return nil
 }
 func (a *Atlas) NewImage(r *bufio.Reader, line string) (err error) {
-	image := Image{
+	if len(line) == 1 {
+		return fmt.Errorf("image name error")
+	}
+	image := &Image{
 		Name: fmt.Sprintf("%s.png", strings.Trim(line, "\n")),
 	}
 	err = image.parseRotate(r.ReadString('\n'))
 	if err != nil {
-		fmt.Printf("e2:%v:%s\n", err, line)
 		return err
 	}
 	err = image.parseXY(r.ReadString('\n'))
 	if err != nil {
-		fmt.Printf("e3:%v\n", err)
 		return err
 	}
 	err = image.parseSize(r.ReadString('\n'))
 	if err != nil {
-		fmt.Printf("e4:%v", err)
 		return err
 	}
 	err = image.parseOrig(r.ReadString('\n'))
 	if err != nil {
-		fmt.Printf("e5:%s:%v", err, line)
 		return err
 	}
 	err = image.parseOffset(r.ReadString('\n'))
 	if err != nil {
-		fmt.Printf("e6:%v", err)
 		return err
 	}
 	err = image.parseIndex(r.ReadString('\n'))
 	if err != nil {
-		fmt.Printf("e7:%v", err)
 		return err
 	}
 
@@ -225,32 +223,29 @@ func (a *Atlas) NewImage(r *bufio.Reader, line string) (err error) {
 }
 
 func (p *Parser) NewAtlas() (atlas *Atlas, err error) {
-	atlas = &Atlas{}
+	atlas = &Atlas{
+		Images: make([]*Image, 0),
+	}
 
 	img, err := p.r.ReadString('\n')
 	atlas.Image = fmt.Sprintf("%s/%s", p.path, strings.Trim(img, "\n"))
 	if err != nil {
-		fmt.Printf("a1:%v", err)
 		return
 	}
 	atlas.Size, err = p.r.ReadString('\n')
 	if err != nil {
-		fmt.Printf("a2:%v", err)
 		return
 	}
 	atlas.Format, err = p.r.ReadString('\n')
 	if err != nil {
-		fmt.Printf("a3:%v", err)
 		return
 	}
 	atlas.Filter, err = p.r.ReadString('\n')
 	if err != nil {
-		fmt.Printf("a4:%v", err)
 		return
 	}
 	atlas.Repeat, err = p.r.ReadString('\n')
 	if err != nil {
-		fmt.Printf("a5:%v", err)
 		return
 	}
 
@@ -260,13 +255,11 @@ func (p *Parser) NewAtlas() (atlas *Atlas, err error) {
 func (p *Parser) Parse() ([]*Atlas, error) {
 	_, err := p.r.ReadString('\n')
 	if err != nil {
-		fmt.Printf("e1:%v", err)
 		return nil, err
 	}
 	var atlas []*Atlas
 	a, err := p.NewAtlas()
 	if err != nil {
-		fmt.Printf("e1:%v", err)
 		return nil, err
 	}
 	for {
@@ -274,7 +267,6 @@ func (p *Parser) Parse() ([]*Atlas, error) {
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			fmt.Printf("e1:%v", err)
 			return nil, err
 		}
 
@@ -282,12 +274,10 @@ func (p *Parser) Parse() ([]*Atlas, error) {
 			atlas = append(atlas, a)
 			a, err = p.NewAtlas()
 			if err != nil {
-				fmt.Printf("e1:%v", err)
 				return nil, err
 			}
 			line, err := p.r.ReadString('\n')
 			if err != nil {
-				fmt.Printf("e1:%v", err)
 				return nil, err
 			}
 			a.NewImage(p.r, line)
