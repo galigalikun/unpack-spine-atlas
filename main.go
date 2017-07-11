@@ -162,11 +162,12 @@ func (a *Atlas) Unpack(outpath string) error {
 	for i := 0; i < len(a.Images); i++ {
 		go func(img *Image) {
 			fmt.Printf("debug rect:%v\n", img.Rect())
+			imageFile := fmt.Sprintf("%s/%s", outpath, img.Name)
 			newImg := atlasImage.(interface {
 				SubImage(r image.Rectangle) image.Image
 			}).SubImage(img.Rect())
-			os.MkdirAll(filepath.Dir(fmt.Sprintf("%s/%s", outpath, img.Name)), 0755)
-			out, err := os.Create(img.Name)
+			os.MkdirAll(filepath.Dir(imageFile), 0755)
+			out, err := os.Create(imageFile)
 			if err != nil {
 				createImage <- fmt.Errorf("create dir error")
 				return
