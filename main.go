@@ -146,7 +146,7 @@ func (i *Image) parseIndex(s string, err error) (e error) {
 	}
 	return nil
 }
-func (a *Atlas) Unpack() error {
+func (a *Atlas) Unpack(outpath string) error {
 	file, err := os.Open(a.Image)
 	if err != nil {
 		return err
@@ -165,7 +165,7 @@ func (a *Atlas) Unpack() error {
 			newImg := atlasImage.(interface {
 				SubImage(r image.Rectangle) image.Image
 			}).SubImage(img.Rect())
-			os.MkdirAll(filepath.Dir(img.Name), 0755)
+			os.MkdirAll(filepath.Dir(fmt.Sprintf("%s/%s", outpath, img.Name)), 0755)
 			out, err := os.Create(img.Name)
 			if err != nil {
 				createImage <- fmt.Errorf("create dir error")
@@ -312,11 +312,15 @@ func (p *Parser) Close() {
 }
 
 func main() {
-	var file string
-	flag.StringVar(&file, "f", "dragon-ess.atlas", "atlas file path")
+	var (
+		in  string
+		out string
+	)
+	flag.StringVar(&in, "in", "dragon-ess.atlas", "atlas file path")
+	flag.StringVar(&out, "out", "result", "output dir path")
 	flag.Parse()
 
-	parser, err := NewParser(file)
+	parser, err := NewParser(in)
 	if err != nil {
 		panic(err)
 	}
@@ -327,7 +331,7 @@ func main() {
 	}
 
 	for _, a := range atlas {
-		err := a.Unpack()
+		err := a.Unpack(out)
 		if err != nil {
 			fmt.Printf("vim-go:%s:%v\n", a.Image, err)
 		}
