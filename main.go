@@ -314,6 +314,7 @@ func (p *Parser) Close() {
 func main() {
 	var file string
 	flag.StringVar(&file, "f", "dragon-ess.atlas", "atlas file path")
+	flag.Parse()
 
 	parser, err := NewParser(file)
 	if err != nil {
