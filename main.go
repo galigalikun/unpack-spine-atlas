@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"image"
 	"image/png"
@@ -311,8 +312,10 @@ func (p *Parser) Close() {
 }
 
 func main() {
+	var file string
+	flag.StringVar(&file, "f", "dragon-ess.atlas", "atlas file path")
 
-	parser, err := NewParser("dragon-ess.atlas")
+	parser, err := NewParser(file)
 	if err != nil {
 		panic(err)
 	}
