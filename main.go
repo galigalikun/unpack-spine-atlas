@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"image/draw"
 	"io"
 	"os"
 	"path/filepath"
@@ -48,6 +49,30 @@ func (i *Image) Rect() image.Rectangle {
 		return image.Rect(i.xy.X, i.xy.Y, i.xy.X+i.size.Y, i.xy.Y+i.size.X)
 	}
 	return image.Rect(i.xy.X, i.xy.Y, i.xy.X+i.size.X, i.xy.Y+i.size.Y)
+}
+
+func rotate(m *image.NRGBA) *image.NRGBA {
+    rotate := image.NewNRGBA(image.Rect(0, 0, m.Bounds().Dy(), m.Bounds().Dx()))
+    // 矩阵旋转
+    for x := m.Bounds().Min.Y; x < m.Bounds().Max.Y; x++ {
+        for y := m.Bounds().Max.X - 1; y >= m.Bounds().Min.X; y-- {
+            //  设置像素点
+            rotate.Set(m.Bounds().Max.Y-x, y - m.Bounds().Min.X, m.At(y, x))
+        }
+    }
+    return rotate
+}
+
+func rotateImg(m image.Image) image.Image {
+    rotateImg := image.NewNRGBA(image.Rect(0, 0, m.Bounds().Dy(), m.Bounds().Dx()))
+    // 矩阵旋转
+    for x := m.Bounds().Min.Y; x < m.Bounds().Max.Y; x++ {
+        for y := m.Bounds().Max.X - 1; y >= m.Bounds().Min.X; y-- {
+            //  设置像素点
+            rotateImg.Set(m.Bounds().Max.Y-x, y - m.Bounds().Min.X, m.At(y, x))
+        }
+    }
+    return rotateImg
 }
 
 func (i *Image) parse(s string, err error, ch string) (string, error) {
@@ -161,18 +186,45 @@ func (a *Atlas) Unpack(outpath string) error {
 	createImage := make(chan error, len(a.Images))
 	for i := 0; i < len(a.Images); i++ {
 		go func(img *Image) {
-			fmt.Printf("debug rect:%v\n", img.Rect())
+			imgRect := img.Rect()
+			fmt.Printf("debug rect:%v\n", imgRect)
 			imageFile := fmt.Sprintf("%s/%s", outpath, img.Name)
 			newImg := atlasImage.(interface {
 				SubImage(r image.Rectangle) image.Image
-			}).SubImage(img.Rect())
+			}).SubImage(imgRect)
+
+			// 获取origin大小
+			var orignRect image.Rectangle
+			orignRect = image.Rect(0, 0, img.orig.X, img.orig.Y)
+
+			if img.rotate {
+				newImg = rotateImg(newImg)
+			}
+
+			// 根据origin大小创建新的图片
+			rgba := image.NewNRGBA(orignRect)
+			// 将图片内容写入到新图片中
+			// fmt.Printf("offset: %d %d              ", img.offset.X, img.offset.Y)
+			// fmt.Printf("bounds: %v\n", newImg.Bounds())
+			// fmt.Printf("origin rect: %v\n", img.OrigRect())
+			var rgbaRect image.Rectangle
+			offsetX := img.offset.X
+			if img.rotate {
+				offsetY := img.orig.Y - img.offset.Y - img.size.Y
+				rgbaRect = image.Rect(offsetX, offsetY, offsetX+img.size.X, offsetY+img.size.Y)
+			} else {
+				offsetY := img.orig.Y - img.offset.Y - img.size.Y
+				rgbaRect = image.Rect(offsetX, offsetY, offsetX+img.size.X, offsetY+img.size.Y)
+			}
+		
+			draw.Draw(rgba, rgbaRect, newImg, newImg.Bounds().Min, draw.Src)
 			os.MkdirAll(filepath.Dir(imageFile), 0755)
 			out, err := os.Create(imageFile)
 			if err != nil {
 				createImage <- fmt.Errorf("create dir error")
 				return
 			}
-			err = png.Encode(out, newImg)
+			err = png.Encode(out, rgba)
 			if err != nil {
 				createImage <- fmt.Errorf("crate png error")
 				return
@@ -312,15 +364,7 @@ func (p *Parser) Close() {
 	p.file.Close()
 }
 
-func main() {
-	var (
-		in  string
-		out string
-	)
-	flag.StringVar(&in, "in", "dragon-ess.atlas", "atlas file path")
-	flag.StringVar(&out, "out", "result", "output dir path")
-	flag.Parse()
-
+func Work(in string, out string) {
 	parser, err := NewParser(in)
 	if err != nil {
 		panic(err)
@@ -337,4 +381,16 @@ func main() {
 			fmt.Printf("vim-go:%s:%v\n", a.Image, err)
 		}
 	}
+}
+
+func main() {
+	var (
+		in  string
+		out string
+	)
+	flag.StringVar(&in, "in", "skeleton.atlas.txt", "atlas file path")
+	flag.StringVar(&out, "out", "result", "output dir path")
+	flag.Parse()
+
+	Work(in, out)
 }
