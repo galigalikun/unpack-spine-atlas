@@ -1,33 +1,16 @@
-package main
+package unpackspineatlas
 
 import (
-	"bufio"
-	"flag"
 	"fmt"
 	"image"
-	"image/png"
 	"image/draw"
-	"io"
+	"image/png"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
-
-type Parser struct {
-	path string
-	r    *bufio.Reader
-	file *os.File
-}
-
-type Atlas struct {
-	Image  string
-	Size   string
-	Format string
-	Filter string
-	Repeat string
-	Images []*Image
-}
 
 type Image struct {
 	Name   string
@@ -52,27 +35,27 @@ func (i *Image) Rect() image.Rectangle {
 }
 
 func rotate(m *image.NRGBA) *image.NRGBA {
-    rotate := image.NewNRGBA(image.Rect(0, 0, m.Bounds().Dy(), m.Bounds().Dx()))
-    // 矩阵旋转
-    for x := m.Bounds().Min.Y; x < m.Bounds().Max.Y; x++ {
-        for y := m.Bounds().Max.X - 1; y >= m.Bounds().Min.X; y-- {
-            //  设置像素点
-            rotate.Set(m.Bounds().Max.Y-x, y - m.Bounds().Min.X, m.At(y, x))
-        }
-    }
-    return rotate
+	rotate := image.NewNRGBA(image.Rect(0, 0, m.Bounds().Dy(), m.Bounds().Dx()))
+	// 矩阵旋转
+	for x := m.Bounds().Min.Y; x < m.Bounds().Max.Y; x++ {
+		for y := m.Bounds().Max.X - 1; y >= m.Bounds().Min.X; y-- {
+			//  设置像素点
+			rotate.Set(m.Bounds().Max.Y-x, y-m.Bounds().Min.X, m.At(y, x))
+		}
+	}
+	return rotate
 }
 
 func rotateImg(m image.Image) image.Image {
-    rotateImg := image.NewNRGBA(image.Rect(0, 0, m.Bounds().Dy(), m.Bounds().Dx()))
-    // 矩阵旋转
-    for x := m.Bounds().Min.Y; x < m.Bounds().Max.Y; x++ {
-        for y := m.Bounds().Max.X - 1; y >= m.Bounds().Min.X; y-- {
-            //  设置像素点
-            rotateImg.Set(m.Bounds().Max.Y-x, y - m.Bounds().Min.X, m.At(y, x))
-        }
-    }
-    return rotateImg
+	rotateImg := image.NewNRGBA(image.Rect(0, 0, m.Bounds().Dy(), m.Bounds().Dx()))
+	// 矩阵旋转
+	for x := m.Bounds().Min.Y; x < m.Bounds().Max.Y; x++ {
+		for y := m.Bounds().Max.X - 1; y >= m.Bounds().Min.X; y-- {
+			//  设置像素点
+			rotateImg.Set(m.Bounds().Max.Y-x, y-m.Bounds().Min.X, m.At(y, x))
+		}
+	}
+	return rotateImg
 }
 
 func (i *Image) parse(s string, err error, ch string) (string, error) {
@@ -98,9 +81,9 @@ func (i *Image) parseRotate(s string, err error) error {
 		return e
 	}
 	i.rotate = false
-	fmt.Printf("rotate->%s", ss)
+	log.Printf("rotate->%s", ss)
 	if strings.Index(ss, "true") != -1 {
-		fmt.Println("rotate true!!")
+		log.Println("rotate true!!")
 		i.rotate = true
 	}
 	return nil
@@ -187,8 +170,8 @@ func (a *Atlas) Unpack(outpath string) error {
 	for i := 0; i < len(a.Images); i++ {
 		go func(img *Image) {
 			imgRect := img.Rect()
-			fmt.Printf("debug rect:%v\n", imgRect)
-			imageFile := fmt.Sprintf("%s/%s", outpath, img.Name)
+			log.Printf("debug rect:%v", imgRect)
+			imageFile := filepath.Join(outpath, img.Name)
 			newImg := atlasImage.(interface {
 				SubImage(r image.Rectangle) image.Image
 			}).SubImage(imgRect)
@@ -216,7 +199,7 @@ func (a *Atlas) Unpack(outpath string) error {
 				offsetY := img.orig.Y - img.offset.Y - img.size.Y
 				rgbaRect = image.Rect(offsetX, offsetY, offsetX+img.size.X, offsetY+img.size.Y)
 			}
-		
+
 			draw.Draw(rgba, rgbaRect, newImg, newImg.Bounds().Min, draw.Src)
 			os.MkdirAll(filepath.Dir(imageFile), 0755)
 			out, err := os.Create(imageFile)
@@ -238,159 +221,4 @@ func (a *Atlas) Unpack(outpath string) error {
 	}
 
 	return nil
-}
-func (a *Atlas) NewImage(r *bufio.Reader, line string) (err error) {
-	if len(line) == 1 {
-		return fmt.Errorf("image name error")
-	}
-	image := &Image{
-		Name: fmt.Sprintf("%s.png", strings.Trim(line, "\n")),
-	}
-	err = image.parseRotate(r.ReadString('\n'))
-	if err != nil {
-		return err
-	}
-	err = image.parseXY(r.ReadString('\n'))
-	if err != nil {
-		return err
-	}
-	err = image.parseSize(r.ReadString('\n'))
-	if err != nil {
-		return err
-	}
-	err = image.parseOrig(r.ReadString('\n'))
-	if err != nil {
-		return err
-	}
-	err = image.parseOffset(r.ReadString('\n'))
-	if err != nil {
-		return err
-	}
-	err = image.parseIndex(r.ReadString('\n'))
-	if err != nil {
-		return err
-	}
-
-	a.Images = append(a.Images, image)
-
-	return nil
-}
-
-func (p *Parser) NewAtlas() (atlas *Atlas, err error) {
-	atlas = &Atlas{
-		Images: make([]*Image, 0),
-	}
-
-	img, err := p.r.ReadString('\n')
-	atlas.Image = fmt.Sprintf("%s/%s", p.path, strings.Trim(img, "\n"))
-	if err != nil {
-		return
-	}
-	atlas.Size, err = p.r.ReadString('\n')
-	if err != nil {
-		return
-	}
-	atlas.Format, err = p.r.ReadString('\n')
-	if err != nil {
-		return
-	}
-	atlas.Filter, err = p.r.ReadString('\n')
-	if err != nil {
-		return
-	}
-	atlas.Repeat, err = p.r.ReadString('\n')
-	if err != nil {
-		return
-	}
-
-	return
-}
-
-func (p *Parser) Parse() ([]*Atlas, error) {
-	_, err := p.r.ReadString('\n')
-	if err != nil {
-		return nil, err
-	}
-	var atlas []*Atlas
-	a, err := p.NewAtlas()
-	if err != nil {
-		return nil, err
-	}
-	for {
-		line, err := p.r.ReadString('\n')
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return nil, err
-		}
-
-		if len(line) == 1 {
-			atlas = append(atlas, a)
-			a, err = p.NewAtlas()
-			if err != nil {
-				return nil, err
-			}
-			line, err := p.r.ReadString('\n')
-			if err != nil {
-				return nil, err
-			}
-			a.NewImage(p.r, line)
-			continue
-		}
-
-		a.NewImage(p.r, line)
-
-	}
-	atlas = append(atlas, a)
-
-	return atlas, nil
-}
-
-func NewParser(s string) (*Parser, error) {
-	file, err := os.Open(s)
-	if err != nil {
-		return nil, err
-	}
-	p := &Parser{
-		path: filepath.Dir(s),
-		file: file,
-		r:    bufio.NewReader(file),
-	}
-
-	return p, nil
-}
-
-func (p *Parser) Close() {
-	p.file.Close()
-}
-
-func Work(in string, out string) {
-	parser, err := NewParser(in)
-	if err != nil {
-		panic(err)
-	}
-	defer parser.Close()
-	atlas, err := parser.Parse()
-	if err != nil {
-		panic(err)
-	}
-
-	for _, a := range atlas {
-		err := a.Unpack(out)
-		if err != nil {
-			fmt.Printf("vim-go:%s:%v\n", a.Image, err)
-		}
-	}
-}
-
-func main() {
-	var (
-		in  string
-		out string
-	)
-	flag.StringVar(&in, "in", "skeleton.atlas.txt", "atlas file path")
-	flag.StringVar(&out, "out", "result", "output dir path")
-	flag.Parse()
-
-	Work(in, out)
 }
