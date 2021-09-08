@@ -15,8 +15,8 @@ type Parser struct {
 	file *os.File
 }
 
-func (p *Parser) NewAtlas() (atlas *Atlas, err error) {
-	atlas = &Atlas{
+func (p *Parser) NewAtlas() (*Atlas, error) {
+	atlas := &Atlas{
 		Images: make([]*Image, 0),
 	}
 	offset := int64(0)
@@ -24,6 +24,8 @@ func (p *Parser) NewAtlas() (atlas *Atlas, err error) {
 		b, _, err := p.r.ReadLine()
 		if err == io.EOF {
 			break
+		} else if err != nil {
+			return nil, err
 		}
 		if len(b) == 0 {
 			continue
@@ -34,7 +36,9 @@ func (p *Parser) NewAtlas() (atlas *Atlas, err error) {
 			if len(atlas.Image) == 0 {
 				atlas.Image = filepath.Join(p.path, line)
 			} else {
-				p.file.Seek(offset, os.SEEK_SET)
+				if _, err := p.file.Seek(offset+1, os.SEEK_SET); err != nil {
+					return nil, err
+				}
 				p.r.Reset(p.file)
 				break
 			}
@@ -53,7 +57,7 @@ func (p *Parser) NewAtlas() (atlas *Atlas, err error) {
 		offset += int64(len(b)) + 1
 	}
 
-	return
+	return atlas, nil
 }
 
 func (p *Parser) Parse() ([]*Atlas, error) {
